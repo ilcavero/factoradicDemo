@@ -11,7 +11,7 @@ lazy val factoradicDemo = project.in(file("."))
     scalaJSLinkerConfig ~= {
       _.withModuleKind(ModuleKind.ESModule)
         .withModuleSplitStyle(
-          ModuleSplitStyle.SmallModulesFor(List("ucldraw")))
+          ModuleSplitStyle.SmallModulesFor(List("factoradic_demo")))
     },
 
     /* Depend on the scalajs-dom library.

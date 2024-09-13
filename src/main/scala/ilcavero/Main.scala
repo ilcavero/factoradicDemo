@@ -1,11 +1,8 @@
 package ilcavero
 
-import com.raquo.airstream.state.{DerivedVar, SourceVar}
-
-import scala.scalajs.js
 import org.scalajs.dom
+import com.raquo.laminar.api.L
 import com.raquo.laminar.api.L.{*, given}
-
 
 @main
 def Main(): Unit = {
@@ -15,99 +12,249 @@ def Main(): Unit = {
   )
 }
 
+case class Model(array: IndexedSeq[String]) {
+
+  val lehmer: List[Int] = {
+    val intValues = array.map(_.toInt).reverse.toList
+
+    def lehmerRec(l: List[Int]): List[Int] = l match {
+      case Nil => l
+      case head :: tail =>
+        (head - tail.count(_ < head)) :: lehmerRec(tail)
+    }
+
+    lehmerRec(intValues).reverse
+  }
+
+  val maxIndex = array.length - 1
+  val factoradicMax = Model.factorial(array.length) - 1
+  val factoradicResult: Long = {
+    lehmer.zipWithIndex.foldLeft(0L) {
+      case (acum, (x, i)) =>
+        acum + x * Model.factorial(maxIndex - i)
+    }
+  }
+
+  def updateArray(i: Int, nextValue: String): Model = {
+    val oldValue: String = array(i)
+    val j = array.indexOf(nextValue)
+    Model(array.updated(i, nextValue).updated(j, oldValue))
+  }
+}
+
+object Model {
+
+  def apply(size: Int): Model = Model((0 until size).map(_.toString))
+
+  def resize(oldModel: Model, newMax: Int): Model = Model(newMax)
+
+  def factorial(n: Int): Long = {
+    if (n < 2) 1
+    else n * factorial(n - 1)
+  }
+
+  def apply(oldModel: Model, newFactoradicResult: Long): Model = {
+    var factoradic = newFactoradicResult
+    val lehmerReverse = for (i <- 1 to oldModel.array.length) yield {
+      val factoradicNextDiv = factoradic / i
+      val factoradicNextMod = factoradic % i
+      factoradic = factoradicNextDiv
+      factoradicNextMod.toInt
+    }
+    val setIndices = oldModel.array.indices.toBuffer
+    val newArray = lehmerReverse.reverse.map { lehmerCodePoint =>
+      setIndices.remove(lehmerCodePoint).toString
+    }
+    Model(newArray)
+  }
+}
+
 object FactoradicDemo {
 
   def apply(): HtmlElement = {
-    val InitialSize = 10
-    val arraySize = Var(InitialSize)
-    val factoradicDescription = Var("")
+    val InitialSize = 5
+    val model = Var(Model(InitialSize))
+    val resizer = model.updater[Int]((m, i) => Model.resize(m, i))
+
+    def arrayUpdates(i: Int) = model.updater[String]((m, n) => m.updateArray(i, n))
+    def factoradicDecimalUpdater = model.updater[Long]((m,d) => Model(m, d))
 
     div(
-      h1("Size of the sequence"),
-      input(
-        typ := "number",
-        controlled(
-          value <-- arraySize.signal.map(_.toString),
-          onInput.mapToValue.filter(_.toIntOption.exists(x => x > 0 && x <= 20)).map(_.toInt) --> arraySize
-        )
-      ),
-      h1("Sequence"),
-      div(
-        child <-- arraySize.signal.map { (max: Int) =>
-          dom.console.debug(s"resetting array")
-          val array = (0 until max).map(i => Var(i.toString))
-          val arrayUpdates = array.map { varr =>
-            varr.updater[String] { (old, next) =>
-              array.find(_.now() == next).foreach(_.set(old))
-              next
-            }
-          }
-
-          def sequenceReverse[T](vars: Seq[Var[T]]): Signal[List[T]] = {
-            vars.foldLeft[Signal[List[T]]](Var(List.empty[T]).signal) {
-              case (acumSignal, xVar) =>
-                acumSignal.combineWith(xVar.signal).map {
-                  case (acum, x) => x :: acum
-                }
-            }
-          }
-          val lehmer = sequenceReverse(array).map { values =>
-            val intValues = values.map(_.toInt)
-            def lehmer(l: List[Int]): List[Int] = l match {
-              case Nil => l
-              case head :: tail =>
-                (head - tail.count(_ < head)) :: lehmer(tail)
-            }
-            lehmer(intValues).reverse
-          }
-
+      className := "m-3",
+      children <-- model.signal.map { (m: Model) =>
+        List(
           div(
-            for(i <- 0 until max) yield {
+            className := "mb-3",
+            h1("The set of elements"),
+            p(
+              "The elements of an ordered set (for example letters) are mapped to the first ",
               input(
                 typ := "number",
                 controlled(
-                  value <-- array(i),
-                  onInput.mapToValue.filter(_.toIntOption.exists(x => x >= 0 && x < max)) --> arrayUpdates(i))
-              )
-            },
-            h1("Sequence as lehmer Code"),
+                  value <-- Var(m.array.length.toString),
+                  onInput.mapToValue.filter(_.toIntOption.exists(x => x > 0 && x < 12)).map(_.toInt) --> resizer
+                )
+              ),
+              " numbers."
+            ),
             div(
-              children <-- lehmer.map { values =>
-                for(x <- values) yield {
-                  input(
-                    value := x.toString,
-                    disabled := true
+              className := "container  d-inline-block",
+              p(
+                className := "row ",
+                ('A' to 'Z').take(m.array.length).zipWithIndex.map { (letter, i) =>
+                  span(className:= "col-1", s"$letter → $i")
+                }
+              )
+            )
+          ),
+          div(
+            className := "mb-3",
+            h1("Permutation"),
+            p("You can arrange the elements of the set in any order."),
+            div(
+              className := "container d-inline-block",
+              div(
+                className := "row",
+                for (i <- m.array.indices) yield {
+                  div(
+                    className := "col-1 p-1",
+                    input(
+                      className := "w-100",
+                      typ := "number",
+                      controlled(
+                        value <-- Var(m.array(i)),
+                        onInput.mapToValue.filter(_.toIntOption.exists(x => x >= 0 && x < m.array.length)) --> arrayUpdates(i)
+                      )
+                    )
                   )
                 }
-              }
-            ),
-            h1("Factoradic to decimal"),
-            div(
-              children <-- lehmer.map { values =>
-                def factorial(n: Int): Long = {
-                  if(n < 2) 1
-                  else n * factorial(n - 1)
-                }
-                val factorialMax = values.size - 1
-                val steps = values.zipWithIndex.map {
-                  case (x, i) =>
-                    s"${x} × ${factorialMax - i}!"
-                }.mkString(" + ")
-                val result = values.zipWithIndex.foldLeft(0L) {
-                  case (acum, (x, i)) =>
-                    acum + x * factorial(factorialMax - i)
-                }
-                List(
-                  label(s"$steps = "),
-                  input(value := s"$result", typ := "number"),
-                  label(f" out of ${factorial(values.size) - 1}%,d")
-                )
-              }
+              )
             )
-
+          ),
+          div(
+            className := "mb-3",
+            h1("Permutation as a Lehmer Code"),
+            p("The elements of the set are remapped after each position to account for the reduced alternatives available."),
+            div(
+              className := "container d-inline-block",
+              div(
+                className := "row align-items-end",
+                {
+                  val letters = ('A' to 'Z').take(m.array.length).toBuffer
+                  for (lehmerCodePoint <- m.lehmer) yield {
+                    val explanation = letters.zipWithIndex.map { (letter, i) =>
+                      p(className := "mb-1 text-monospace", s"$letter → $i")
+                    }
+                    letters.remove(lehmerCodePoint)
+                    div(
+                      className := "col-1 p-1",
+                      explanation,
+                      input(
+                        className := "w-100",
+                        value := lehmerCodePoint.toString,
+                        disabled := true
+                      )
+                    )
+                  }
+                }
+              )
+            )
+          ),
+          div(
+            className := "mb-3",
+            h1("Factoradic to decimal"),
+            p("Interpreting the Lehmer code in the fatoradic number system maps uniquely the permutation to a number. This number can be converted to a decimal representation if we multiply each position in by the factorial of the position index."),
+            div(
+                className := "container d-inline-block",
+                div(
+                  className := "row",
+                  m.lehmer.zipWithIndex.map {
+                    case (x, i) =>
+                      div(
+                        className := "col-1 p-1 text-center align-bottom",
+                        span(className := "text-monospace", s"$x × ${m.maxIndex - i}!"),
+                        span(className := "float-right", if(i == m.array.length -1) "=" else "+")
+                      )
+                  },
+                  div(
+                    className := "col-1 p-1 text-nowrap",
+                    input(
+                      typ := "number",
+                      value := m.factoradicResult.toString,
+                      onChange.mapToValue.map(_.toLongOption).collect { case Some(v) if v >= 0 && v <= m.factoradicMax => v } --> factoradicDecimalUpdater
+                    ),
+                    span(f" out of ${m.factoradicMax}%,d")
+                  )
+                )
+            ),
+          ),
+          div(
+            className := "mb-3",
+            h1("Decimal to Factoradic"),
+            p("The decimal representation can be converted back to factoradic by repeatedly performing integer division (displayed from right to left in here) and keeping the remainders."),
+            div(
+              className := "container d-inline-block",
+              div(
+                className := "row",
+                {
+                  var factoradic = m.factoradicResult
+                  for (i <- 1 to m.array.length) yield {
+                    val factoradicNextDiv = factoradic / i
+                    val factoradicNextMod = factoradic % i
+                    val oldFactoradic = factoradic
+                    factoradic = factoradicNextDiv
+                    div(
+                      className := "col-1 p-1 text-monospace",
+                      mathTag(
+                        htmlTag("mfrac")(
+                          htmlTag("mrow")(
+                            htmlTag("mn")(oldFactoradic)
+                          ),
+                          htmlTag("mrow")(
+                            htmlTag("mn")(i)
+                          )
+                        ),
+                        htmlTag("mo")("="),
+                        htmlTag("mn")(factoradicNextDiv),
+                        htmlTag("mo")("+"),
+                        htmlTag("mn")(factoradicNextMod),
+                      ),
+                      p(s"$oldFactoradic/$i=$factoradicNextDiv"),
+                      p(
+                        s"$factoradic%$i=",
+                        mark(s"$factoradicNextMod"))
+                    )
+                  }
+                }.reverse
+              ),
+              div(
+                className := "row",
+                for (x <- m.lehmer) yield {
+                  div(
+                    className := "col-1 p-1",
+                    input(
+                      className := "w-100",
+                      value := x.toString,
+                      disabled := true
+                    )
+                  )
+                }
+              )
+            )
+          ),
+          div(
+            className := "mb-3",
+            h1("Lehmer code to Permutation"),
+            p("Finally the permutation emerges back again by remapping the Lehmer code to the ascending numbers left to right."),
+            m.array.map { n =>
+              input(
+                value := n,
+                disabled := true
+              )
+            }
           )
-        }
-      )
+        )
+      }
     )
   }
 }
