@@ -89,7 +89,7 @@ object FactoradicDemo {
         List(
           div(
             className := "mb-3",
-            h1("The set of elements"),
+            h1("A set of elements..."),
             p(
               "The elements of an ordered set (for example letters) can be mapped to the first ",
               input(
