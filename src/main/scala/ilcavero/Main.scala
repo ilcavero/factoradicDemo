@@ -77,7 +77,11 @@ object FactoradicDemo {
     val resizer = model.updater[Int]((m, i) => Model.resize(m, i))
 
     def arrayUpdates(i: Int) = model.updater[String]((m, n) => m.updateArray(i, n))
-    def factoradicDecimalUpdater = model.updater[Long]((m,d) => Model(m, d))
+    def factoradicDecimalUpdater = model.updater[String]{ (m,d) =>
+      d.toLongOption match
+        case Some(v) if v >= 0 && v <= m.factoradicMax => Model(m, v)
+        case _ => m
+    }
 
     div(
       className := "m-3",
@@ -87,7 +91,7 @@ object FactoradicDemo {
             className := "mb-3",
             h1("The set of elements"),
             p(
-              "The elements of an ordered set (for example letters) are mapped to the first ",
+              "The elements of an ordered set (for example letters) can be mapped to the first ",
               input(
                 typ := "number",
                 controlled(
@@ -95,7 +99,7 @@ object FactoradicDemo {
                   onInput.mapToValue.filter(_.toIntOption.exists(x => x > 0 && x < 12)).map(_.toInt) --> resizer
                 )
               ),
-              " numbers."
+              " numbers starting with 0."
             ),
             div(
               className := "container  d-inline-block",
@@ -109,8 +113,8 @@ object FactoradicDemo {
           ),
           div(
             className := "mb-3",
-            h1("Permutation"),
-            p("You can arrange the elements of the set in any order."),
+            h1("Permutation of mapped elements"),
+            p("These numbers ordered without duplicates represent a permutation. Try changing the values to create a permutation, this page will not let you input duplicates."),
             div(
               className := "container d-inline-block",
               div(
@@ -134,7 +138,7 @@ object FactoradicDemo {
           div(
             className := "mb-3",
             h1("Permutation as a Lehmer Code"),
-            p("The elements of the set are remapped after each position to account for the reduced alternatives available."),
+            p("The permutation can also be represented by a Lehmer code if after each position you remap the set by removing selected elements to account for the reduced alternatives available."),
             div(
               className := "container d-inline-block",
               div(
@@ -143,7 +147,8 @@ object FactoradicDemo {
                   val letters = ('A' to 'Z').take(m.array.length).toBuffer
                   for (lehmerCodePoint <- m.lehmer) yield {
                     val explanation = letters.zipWithIndex.map { (letter, i) =>
-                      p(className := "mb-1 text-monospace", s"$letter → $i")
+                      val text = s"$letter → $i"
+                      p(className := "mb-1 text-monospace", if(i == lehmerCodePoint) mark(cls := "p-0", text) else text)
                     }
                     letters.remove(lehmerCodePoint)
                     div(
@@ -163,15 +168,15 @@ object FactoradicDemo {
           div(
             className := "mb-3",
             h1("Factoradic to decimal"),
-            p("Interpreting the Lehmer code in the fatoradic number system maps uniquely the permutation to a number. This number can be converted to a decimal representation if we multiply each position in by the factorial of the position index."),
+            p("Interpreting the Lehmer code in the fatoradic number system uniquely maps the permutation to a single number. This number can be converted to a decimal representation if we multiply each position in by the factorial of the position index."),
             div(
                 className := "container d-inline-block",
                 div(
-                  className := "row",
+                  className := "row align-items-center",
                   m.lehmer.zipWithIndex.map {
                     case (x, i) =>
                       div(
-                        className := "col-1 p-1 text-center align-bottom",
+                        className := "col-1 p-1 text-center",
                         span(className := "text-monospace", s"$x × ${m.maxIndex - i}!"),
                         span(className := "float-right", if(i == m.array.length -1) "=" else "+")
                       )
@@ -181,9 +186,9 @@ object FactoradicDemo {
                     input(
                       typ := "number",
                       value := m.factoradicResult.toString,
-                      onChange.mapToValue.map(_.toLongOption).collect { case Some(v) if v >= 0 && v <= m.factoradicMax => v } --> factoradicDecimalUpdater
+                      onChange.mapToValue --> factoradicDecimalUpdater
                     ),
-                    span(f" out of ${m.factoradicMax}%,d")
+                    span(f" out of ${m.factoradicMax}%,d (Try changing this number to generate a new permutation)")
                   )
                 )
             ),
@@ -191,11 +196,11 @@ object FactoradicDemo {
           div(
             className := "mb-3",
             h1("Decimal to Factoradic"),
-            p("The decimal representation can be converted back to factoradic by repeatedly performing integer division (displayed from right to left in here) and keeping the remainders."),
+            p("The decimal representation can be converted back to factoradic by repeatedly performing integer division (performed from right to left in here) and keeping the remainders."),
             div(
               className := "container d-inline-block",
               div(
-                className := "row",
+                cls := "row align-items-end",
                 {
                   var factoradic = m.factoradicResult
                   for (i <- 1 to m.array.length) yield {
@@ -203,55 +208,49 @@ object FactoradicDemo {
                     val factoradicNextMod = factoradic % i
                     val oldFactoradic = factoradic
                     factoradic = factoradicNextDiv
-                    div(
-                      className := "col-1 p-1 text-monospace",
-                      mathTag(
-                        htmlTag("mfrac")(
-                          htmlTag("mrow")(
-                            htmlTag("mn")(oldFactoradic)
-                          ),
-                          htmlTag("mrow")(
-                            htmlTag("mn")(i)
-                          )
-                        ),
-                        htmlTag("mo")("="),
-                        htmlTag("mn")(factoradicNextDiv),
-                        htmlTag("mo")("+"),
-                        htmlTag("mn")(factoradicNextMod),
-                      ),
-                      p(s"$oldFactoradic/$i=$factoradicNextDiv"),
-                      p(
-                        s"$factoradic%$i=",
-                        mark(s"$factoradicNextMod"))
+                    div(cls := "col-1 p-1",
+                      p(cls := "text-monospace", s"$oldFactoradic / $i = $factoradicNextDiv"),
+                      p(cls := "text-monospace", s"$oldFactoradic % $i = ", mark(s"$factoradicNextMod")),
+                      input(
+                        className := "w-100",
+                        value := m.lehmer(m.array.length - i).toString,
+                        disabled := true
+                      )
                     )
                   }
                 }.reverse
-              ),
-              div(
-                className := "row",
-                for (x <- m.lehmer) yield {
-                  div(
-                    className := "col-1 p-1",
-                    input(
-                      className := "w-100",
-                      value := x.toString,
-                      disabled := true
-                    )
-                  )
-                }
               )
             )
           ),
           div(
             className := "mb-3",
             h1("Lehmer code to Permutation"),
-            p("Finally the permutation emerges back again by remapping the Lehmer code to the ascending numbers left to right."),
-            m.array.map { n =>
-              input(
-                value := n,
-                disabled := true
+            p("Finally the permutation emerges back again by mapping the Lehmer code to the set elements and removing selected elements left to right."),
+            div(
+              className := "container d-inline-block",
+              div(
+                className := "row align-items-end",
+                {
+                  val letters = ('A' to 'Z').take(m.array.length).toBuffer
+                  for (lehmerCodePoint <- m.lehmer) yield {
+                    val explanation = letters.zipWithIndex.map { (letter, i) =>
+                      val text = s"$i → $letter"
+                      p(className := "mb-1 text-monospace", if(i == lehmerCodePoint) mark(cls := "p-0",text) else text)
+                    }
+                    val letter = letters.remove(lehmerCodePoint)
+                    div(
+                      className := "col-1 p-1",
+                      explanation,
+                      input(
+                        className := "w-100",
+                        value := letter.toString,
+                        disabled := true
+                      )
+                    )
+                  }
+                }
               )
-            }
+            )
           )
         )
       }
