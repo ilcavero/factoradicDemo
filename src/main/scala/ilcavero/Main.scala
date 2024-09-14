@@ -26,34 +26,43 @@ case class Model(array: IndexedSeq[String]) {
     lehmerRec(intValues).reverse
   }
 
-  val maxIndex = array.length - 1
-  val factoradicMax = Model.factorial(array.length) - 1
+  private def factorial(n: Int): Long = {
+    if (n < 2) 1
+    else n * factorial(n - 1)
+  }
+
+  val maxIndex: Int = array.length - 1
+  val factoradicMax: Long = factorial(array.length) - 1
   val factoradicResult: Long = {
     lehmer.zipWithIndex.foldLeft(0L) {
       case (acum, (x, i)) =>
-        acum + x * Model.factorial(maxIndex - i)
+        acum + x * factorial(maxIndex - i)
     }
   }
 
-  def updateArray(i: Int, nextValue: String): Model = {
-    val oldValue: String = array(i)
-    val j = array.indexOf(nextValue)
-    Model(array.updated(i, nextValue).updated(j, oldValue))
-  }
 }
 
 object Model {
 
   def apply(size: Int): Model = Model((0 until size).map(_.toString))
 
-  def resize(oldModel: Model, newMax: Int): Model = Model(newMax)
-
-  def factorial(n: Int): Long = {
-    if (n < 2) 1
-    else n * factorial(n - 1)
+  def resize(oldModel: Model, newMax: Int): Model = {
+    if(newMax > oldModel.array.size) {
+      Model(oldModel.array.appendedAll(( oldModel.array.size until newMax).map(_.toString)))
+    } else {
+      var newArray = oldModel.array.take(newMax).map(_.toInt)
+      for(i <- newMax until oldModel.array.size) {
+        val outValue = oldModel.array(i).toInt
+        if(outValue < newMax) {
+          val (_, j) = newArray.zipWithIndex.find(x => x._1 >= newMax).get
+          newArray = newArray.updated(j, outValue)
+        }
+      }
+      Model(newArray.map(_.toString))
+    }
   }
 
-  def apply(oldModel: Model, newFactoradicResult: Long): Model = {
+  def updateDecimalFactoradic(oldModel: Model, newFactoradicResult: Long): Model = {
     var factoradic = newFactoradicResult
     val lehmerReverse = for (i <- 1 to oldModel.array.length) yield {
       val factoradicNextDiv = factoradic / i
@@ -67,6 +76,22 @@ object Model {
     }
     Model(newArray)
   }
+
+  def updateArray(m: Model, i: Int, nextValue: String): Model = {
+    val oldValue: String = m.array(i)
+    val j = m.array.indexOf(nextValue)
+    Model(m.array.updated(i, nextValue).updated(j, oldValue))
+  }
+
+  def updateLehmer(oldModel: Model, i: Int, l: String): Model = {
+    val setIndices = oldModel.array.indices.toBuffer
+    val newLehmer = oldModel.lehmer.toIndexedSeq.updated(i, l.toInt)
+    dom.console.debug(s"updating $i $l  $newLehmer")
+    val newArray = newLehmer.map { lehmerCodePoint =>
+      setIndices.remove(lehmerCodePoint).toString
+    }
+    Model(newArray)
+  }
 }
 
 object FactoradicDemo {
@@ -76,12 +101,15 @@ object FactoradicDemo {
     val model = Var(Model(InitialSize))
     val resizer = model.updater[Int]((m, i) => Model.resize(m, i))
 
-    def arrayUpdates(i: Int) = model.updater[String]((m, n) => m.updateArray(i, n))
+    def arrayUpdater(i: Int) = model.updater[String]((m, n) => Model.updateArray(m, i, n))
+
     def factoradicDecimalUpdater = model.updater[String]{ (m,d) =>
       d.toLongOption match
-        case Some(v) if v >= 0 && v <= m.factoradicMax => Model(m, v)
+        case Some(v) if v >= 0 && v <= m.factoradicMax => Model.updateDecimalFactoradic(m, v)
         case _ => m
     }
+
+    def lehmerUpdater(i: Int) = model.updater[String]( (m, l) => Model.updateLehmer(m,i,l))
 
     div(
       className := "m-3",
@@ -114,7 +142,7 @@ object FactoradicDemo {
           div(
             className := "mb-3",
             h1("Permutation of mapped elements"),
-            p("These numbers ordered without duplicates represent a permutation. Try changing the values to create a permutation, this page will not let you input duplicates."),
+            p("These numbers ordered without duplicates represent a permutation. Try changing the values to create a new permutation, this page will not let you input duplicates."),
             div(
               className := "container d-inline-block",
               div(
@@ -127,7 +155,7 @@ object FactoradicDemo {
                       typ := "number",
                       controlled(
                         value <-- Var(m.array(i)),
-                        onInput.mapToValue.filter(_.toIntOption.exists(x => x >= 0 && x < m.array.length)) --> arrayUpdates(i)
+                        onInput.mapToValue.filter(_.toIntOption.exists(x => x >= 0 && x < m.array.length)) --> arrayUpdater(i)
                       )
                     )
                   )
@@ -138,14 +166,15 @@ object FactoradicDemo {
           div(
             className := "mb-3",
             h1("Permutation as a Lehmer Code"),
-            p("The permutation can also be represented by a Lehmer code if after each position you remap the set by removing selected elements to account for the reduced alternatives available."),
+            p("The permutation can also be represented by a Lehmer code if after each position you remap the set by removing selected elements to account for the reduced alternatives available. Try changing the code to create a new permutation."),
             div(
               className := "container d-inline-block",
               div(
                 className := "row align-items-end",
                 {
                   val letters = ('A' to 'Z').take(m.array.length).toBuffer
-                  for (lehmerCodePoint <- m.lehmer) yield {
+                  for (i <- m.lehmer.indices) yield {
+                    val lehmerCodePoint = m.lehmer(i)
                     val explanation = letters.zipWithIndex.map { (letter, i) =>
                       val text = s"$letter → $i"
                       p(className := "mb-1 text-monospace", if(i == lehmerCodePoint) mark(cls := "p-0", text) else text)
@@ -156,8 +185,11 @@ object FactoradicDemo {
                       explanation,
                       input(
                         className := "w-100",
-                        value := lehmerCodePoint.toString,
-                        disabled := true
+                        typ := "number",
+                        controlled(
+                          value <-- Var(lehmerCodePoint.toString),
+                          onInput.mapToValue.filter(_.toIntOption.exists(x => x >= 0 && x <= (m.maxIndex - i))) --> lehmerUpdater(i)
+                        )
                       )
                     )
                   }
@@ -168,7 +200,7 @@ object FactoradicDemo {
           div(
             className := "mb-3",
             h1("Factoradic to decimal"),
-            p("Interpreting the Lehmer code in the fatoradic number system uniquely maps the permutation to a single number. This number can be converted to a decimal representation if we multiply each position in by the factorial of the position index."),
+            p("Interpreting the Lehmer code in the factoradic number system uniquely maps the permutation to a single number. This number can be converted to a decimal representation if we multiply each position in by the factorial of the position index."),
             div(
                 className := "container d-inline-block",
                 div(
